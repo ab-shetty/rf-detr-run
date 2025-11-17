@@ -17,27 +17,31 @@ def extract_dataset(zip_path, extract_to="/tmp/dataset"):
 def restructure_dataset(extract_dir):
     """Reorganize dataset to RF-DETR format"""
     import shutil
-    import json
     
     dataset_dir = os.path.join(extract_dir, 'dataset')
     
     # Rename val to valid
-    if os.path.exists(os.path.join(dataset_dir, 'val')):
-        os.rename(os.path.join(dataset_dir, 'val'), 
-                  os.path.join(dataset_dir, 'valid'))
+    val_dir = os.path.join(dataset_dir, 'val')
+    if os.path.exists(val_dir):
+        os.rename(val_dir, os.path.join(dataset_dir, 'valid'))
     
-    # Move annotations into their respective folders
     for split in ['train', 'valid', 'test']:
-        anno_file = os.path.join(dataset_dir, f'annotations_{split}.json')
-        if split == 'valid':
-            # Handle val/valid naming
-            anno_file_alt = os.path.join(dataset_dir, 'annotations_val.json')
-            if os.path.exists(anno_file_alt):
-                anno_file = anno_file_alt
+        split_dir = os.path.join(dataset_dir, split)
+        images_dir = os.path.join(split_dir, 'images')
         
-        if os.path.exists(anno_file):
-            dest = os.path.join(dataset_dir, split, '_annotations.coco.json')
-            shutil.move(anno_file, dest)
+        # Move images from images/ subfolder to split folder
+        if os.path.exists(images_dir):
+            for img in os.listdir(images_dir):
+                shutil.move(os.path.join(images_dir, img), 
+                           os.path.join(split_dir, img))
+            os.rmdir(images_dir)
+        
+        # Move annotation file
+        anno_src = f'annotations_{split if split != "valid" else "val"}.json'
+        anno_path = os.path.join(dataset_dir, anno_src)
+        if os.path.exists(anno_path):
+            shutil.move(anno_path, 
+                       os.path.join(split_dir, '_annotations.coco.json'))
     
     return dataset_dir
   
