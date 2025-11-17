@@ -14,6 +14,33 @@ def extract_dataset(zip_path, extract_to="/tmp/dataset"):
     print(f"✅ Dataset extracted to {extract_to}")
     return extract_to
 
+def restructure_dataset(extract_dir):
+    """Reorganize dataset to RF-DETR format"""
+    import shutil
+    import json
+    
+    dataset_dir = os.path.join(extract_dir, 'dataset')
+    
+    # Rename val to valid
+    if os.path.exists(os.path.join(dataset_dir, 'val')):
+        os.rename(os.path.join(dataset_dir, 'val'), 
+                  os.path.join(dataset_dir, 'valid'))
+    
+    # Move annotations into their respective folders
+    for split in ['train', 'valid', 'test']:
+        anno_file = os.path.join(dataset_dir, f'annotations_{split}.json')
+        if split == 'valid':
+            # Handle val/valid naming
+            anno_file_alt = os.path.join(dataset_dir, 'annotations_val.json')
+            if os.path.exists(anno_file_alt):
+                anno_file = anno_file_alt
+        
+        if os.path.exists(anno_file):
+            dest = os.path.join(dataset_dir, split, '_annotations.coco.json')
+            shutil.move(anno_file, dest)
+    
+    return dataset_dir
+  
 def train_rfdetr(args):
 
     model = RFDETRBase()
@@ -24,9 +51,10 @@ def train_rfdetr(args):
         raise FileNotFoundError(f"No zip file found in {args.dataset_dir}")
     dataset_zip = os.path.join(args.dataset_dir, zip_files[0])
     extract_dir = extract_dataset(dataset_zip)
+    dataset_dir = restructure_dataset(extract_dir)
 
     model.train(
-        dataset_dir=extract_dir,
+        dataset_dir=dataset_dir,
         epochs=10,
         batch_size=16,
         grad_accum_steps=4,
