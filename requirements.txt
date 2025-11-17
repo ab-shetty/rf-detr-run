@@ -6,6 +6,7 @@ matplotlib
 ninja
 numpy
 open_clip_torch
+opencv-python-headless>=4.6.0,<4.10.0
 pandas
 peft
 polygraphy
