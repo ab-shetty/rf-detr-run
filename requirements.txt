@@ -19,3 +19,4 @@ supervision
 timm
 tqdm
 transformers
+rfdetr==1.2.1
