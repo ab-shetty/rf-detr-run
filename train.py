@@ -3,7 +3,7 @@ import zipfile
 import argparse
 import yaml
 from pathlib import Path
-from rfdetr import RFDETRBase
+from rfdetr import RFDETRSmall
 
 def extract_dataset(zip_path, extract_to="/tmp/dataset"):
   
@@ -47,7 +47,7 @@ def restructure_dataset(extract_dir):
   
 def train_rfdetr(args):
 
-    model = RFDETRBase()
+    model = RFDETRSmall()
 
     # Dataset
     zip_files = [f for f in os.listdir(args.dataset_dir) if f.endswith('.zip')]
@@ -59,8 +59,8 @@ def train_rfdetr(args):
 
     model.train(
         dataset_dir=dataset_dir,
-        epochs=10,
-        batch_size=16,
+        epochs=args.epochs,
+        batch_size=args.batch,
         grad_accum_steps=4,
         lr=1e-4,
         output_dir=args.out_dir
@@ -75,7 +75,7 @@ def main():
                         help='Output directory for checkpoints')
     # parser.add_argument('--model', type=str, default='yolo11n.pt',
     #                     choices=['yolo11n.pt','yolo11s.pt','yolo11m.pt','yolo11l.pt','yolo11x.pt'])
-    parser.add_argument('--epochs', type=int, default=20)
+    parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--batch', type=int, default=16)
 
     args = parser.parse_args()
