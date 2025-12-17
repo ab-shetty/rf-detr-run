@@ -2,6 +2,7 @@ import os
 import zipfile
 import argparse
 import yaml
+import wandb
 from pathlib import Path
 from rfdetr import RFDETRSmall
 
@@ -46,6 +47,21 @@ def restructure_dataset(extract_dir):
     return dataset_dir
   
 def train_rfdetr(args):
+    # Initialize Weights & Biases
+    wandb.login(key=os.environ.get('WANDB_API_KEY'))
+    
+    run = wandb.init(
+        project=args.wandb_project,
+        entity="ashetty21-university-of-california-berkeley",
+        config={
+            "model": "RFDETRSmall",
+            "epochs": args.epochs,
+            "batch_size": args.batch,
+            "learning_rate": 1e-4,
+            "grad_accum_steps": 4
+        },
+        name=f"rfdetr-small-{args.epochs}epochs"
+    )
 
     model = RFDETRSmall()
 
@@ -57,6 +73,7 @@ def train_rfdetr(args):
     extract_dir = extract_dataset(dataset_zip)
     dataset_dir = restructure_dataset(extract_dir)
 
+    # Train with wandb logging
     model.train(
         dataset_dir=dataset_dir,
         epochs=args.epochs,
@@ -65,6 +82,26 @@ def train_rfdetr(args):
         lr=1e-4,
         output_dir=args.out_dir
     )
+    
+    # Save final model as artifact
+    print("Saving model artifact to W&B...")
+    artifact = wandb.Artifact(
+        name=f"rfdetr-small-model",
+        type="model",
+        description=f"RF-DETR Small trained for {args.epochs} epochs"
+    )
+    
+    # Add checkpoint files to artifact
+    for file in os.listdir(args.out_dir):
+        if file.endswith('.pth') or file.endswith('.pt'):
+            artifact.add_file(os.path.join(args.out_dir, file))
+    
+    # Log the artifact
+    run.log_artifact(artifact)
+    
+    # Finish the run
+    wandb.finish()
+    print("✅ Model artifact saved to W&B")
   
   
 def main():
@@ -73,10 +110,10 @@ def main():
     parser.add_argument('--out_dir', type=str, 
                         default=os.environ.get('FLEXAI_OUTPUT_CHECKPOINT_DIR', '/output-checkpoints'),
                         help='Output directory for checkpoints')
-    # parser.add_argument('--model', type=str, default='yolo11n.pt',
-    #                     choices=['yolo11n.pt','yolo11s.pt','yolo11m.pt','yolo11l.pt','yolo11x.pt'])
     parser.add_argument('--epochs', type=int, default=10)
     parser.add_argument('--batch', type=int, default=16)
+    parser.add_argument('--wandb_project', type=str, default='rfdetr-training',
+                        help='W&B project name')
 
     args = parser.parse_args()
     train_rfdetr(args)
