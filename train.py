@@ -47,9 +47,20 @@ def restructure_dataset(extract_dir):
     return dataset_dir
   
 def train_rfdetr(args):
-    # Login to W&B and set entity (RF-DETR will handle run initialization)
+    # Initialize Weights & Biases
     wandb.login(key=os.environ.get('WANDB_API_KEY'))
-    os.environ['WANDB_ENTITY'] = 'ashetty21-university-of-california-berkeley'
+    
+    run = wandb.init(
+        project=args.wandb_project,
+        entity="ashetty21-university-of-california-berkeley",
+        config={
+            "model": "RFDETRSmall",
+            "epochs": args.epochs,
+            "batch_size": args.batch,
+            "learning_rate": 1e-4,
+            "grad_accum_steps": 4
+        }
+    )
 
     model = RFDETRSmall()
 
@@ -60,11 +71,8 @@ def train_rfdetr(args):
     dataset_zip = os.path.join(args.dataset_dir, zip_files[0])
     extract_dir = extract_dataset(dataset_zip)
     dataset_dir = restructure_dataset(extract_dir)
-    
-    # Save run name
-    run_name = f"rfdetr-small-{args.epochs}epochs"
 
-    # Train with W&B logging (RF-DETR will create and manage the W&B run)
+    # Train with wandb logging
     model.train(
         dataset_dir=dataset_dir,
         epochs=args.epochs,
@@ -72,9 +80,7 @@ def train_rfdetr(args):
         grad_accum_steps=4,
         lr=1e-4,
         output_dir=args.out_dir,
-        wandb=True,  # Enable W&B logging - RF-DETR handles run initialization
-        project=args.wandb_project,
-        run=run_name
+        wandb=True,
     )
     
     # Save final model as artifact
@@ -82,12 +88,10 @@ def train_rfdetr(args):
     
     # Check if run is still active, if not resume it
     if wandb.run is None:
-        # Get the most recent run for this project
         api = wandb.Api()
         runs = api.runs(f"ashetty21-university-of-california-berkeley/{args.wandb_project}")
         latest_run = runs[0]
         
-        # Resume the run
         run = wandb.init(
             project=args.wandb_project,
             entity="ashetty21-university-of-california-berkeley",
@@ -103,11 +107,11 @@ def train_rfdetr(args):
     
     # Add checkpoint files to artifact
     for file in os.listdir(args.out_dir):
-        if file.endswith('best_total.pth') or file.endswith('.pt'):
+        if file.endswith('_best_total.pth'):
             artifact.add_file(os.path.join(args.out_dir, file))
     
     # Log the artifact
-    wandb.log_artifact(artifact)
+    run.log_artifact(artifact)
     
     # Finish the run
     wandb.finish()
