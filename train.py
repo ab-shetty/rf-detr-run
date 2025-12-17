@@ -90,7 +90,7 @@ def train_rfdetr(args):
     if wandb.run is None:
         api = wandb.Api()
         runs = api.runs(f"ashetty21-university-of-california-berkeley/{args.wandb_project}")
-        latest_run = runs[0]
+        latest_run = runs[-1]
         
         run = wandb.init(
             project=args.wandb_project,
