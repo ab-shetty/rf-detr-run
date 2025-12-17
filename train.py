@@ -80,7 +80,8 @@ def train_rfdetr(args):
         batch_size=args.batch,
         grad_accum_steps=4,
         lr=1e-4,
-        output_dir=args.out_dir
+        output_dir=args.out_dir,
+        wandb=True,
     )
     
     # Save final model as artifact
@@ -93,7 +94,7 @@ def train_rfdetr(args):
     
     # Add checkpoint files to artifact
     for file in os.listdir(args.out_dir):
-        if file.endswith('.pth') or file.endswith('.pt'):
+        if file.endswith('_best_total.pth') or file.endswith('.pt'):
             artifact.add_file(os.path.join(args.out_dir, file))
     
     # Log the artifact
