@@ -47,20 +47,9 @@ def restructure_dataset(extract_dir):
     return dataset_dir
   
 def train_rfdetr(args):
-    # Initialize Weights & Biases
+    # Login to W&B (RF-DETR will initialize the run)
     wandb.login(key=os.environ.get('WANDB_API_KEY'))
-    
-    run = wandb.init(
-        project=args.wandb_project,
-        entity="ashetty21-university-of-california-berkeley",
-        config={
-            "model": "RFDETRSmall",
-            "epochs": args.epochs,
-            "batch_size": args.batch,
-            "learning_rate": 1e-4,
-            "grad_accum_steps": 4
-        }
-    )
+    os.environ['WANDB_ENTITY'] = 'ashetty21-university-of-california-berkeley'
 
     model = RFDETRSmall()
 
@@ -72,7 +61,7 @@ def train_rfdetr(args):
     extract_dir = extract_dataset(dataset_zip)
     dataset_dir = restructure_dataset(extract_dir)
 
-    # Train with wandb logging
+    # Train with wandb logging (RF-DETR will create the W&B run)
     model.train(
         dataset_dir=dataset_dir,
         epochs=args.epochs,
@@ -81,23 +70,16 @@ def train_rfdetr(args):
         lr=1e-4,
         output_dir=args.out_dir,
         wandb=True,
+        project=args.wandb_project,
     )
     
     # Save final model as artifact
     print("Saving model artifact to W&B...")
     
-    # Check if run is still active, if not resume it
+    # Check if RF-DETR's run is still active
     if wandb.run is None:
-        api = wandb.Api()
-        runs = api.runs(f"ashetty21-university-of-california-berkeley/{args.wandb_project}")
-        latest_run = runs[-1]
-        
-        run = wandb.init(
-            project=args.wandb_project,
-            entity="ashetty21-university-of-california-berkeley",
-            id=latest_run.id,
-            resume="allow"
-        )
+        print("ERROR: W&B run was closed. Cannot log artifact.")
+        return
     
     artifact = wandb.Artifact(
         name=f"rfdetr-small-model",
@@ -111,7 +93,7 @@ def train_rfdetr(args):
             artifact.add_file(os.path.join(args.out_dir, file))
     
     # Log the artifact
-    run.log_artifact(artifact)
+    wandb.log_artifact(artifact)
     
     # Finish the run
     wandb.finish()
