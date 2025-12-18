@@ -47,9 +47,9 @@ def restructure_dataset(extract_dir):
     return dataset_dir
   
 def train_rfdetr(args):
-    # Login to W&B (RF-DETR will initialize the run)
-    wandb.login(key=os.environ.get('WANDB_API_KEY'))
+    # Set W&B entity before RF-DETR initializes
     os.environ['WANDB_ENTITY'] = 'ashetty21-university-of-california-berkeley'
+    wandb.login(key=os.environ.get('WANDB_API_KEY'))
 
     model = RFDETRSmall()
 
@@ -61,7 +61,7 @@ def train_rfdetr(args):
     extract_dir = extract_dataset(dataset_zip)
     dataset_dir = restructure_dataset(extract_dir)
 
-    # Train with wandb logging (RF-DETR will create the W&B run)
+    # Train with wandb logging (RF-DETR will create and manage W&B run)
     model.train(
         dataset_dir=dataset_dir,
         epochs=args.epochs,
@@ -73,13 +73,19 @@ def train_rfdetr(args):
         project=args.wandb_project,
     )
     
-    # Save final model as artifact
+    # Get the run ID that RF-DETR just used
     print("Saving model artifact to W&B...")
+    api = wandb.Api()
+    runs = api.runs(f"ashetty21-university-of-california-berkeley/{args.wandb_project}", order="-created_at")
+    latest_run_id = runs[0].id
     
-    # Check if RF-DETR's run is still active
-    if wandb.run is None:
-        print("ERROR: W&B run was closed. Cannot log artifact.")
-        return
+    # Resume that run to add artifact
+    run = wandb.init(
+        project=args.wandb_project,
+        entity="ashetty21-university-of-california-berkeley",
+        id=latest_run_id,
+        resume="must"
+    )
     
     artifact = wandb.Artifact(
         name=f"rfdetr-small-model",
