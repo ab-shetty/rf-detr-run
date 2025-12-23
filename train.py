@@ -12,28 +12,52 @@ def extract_dataset(archive_path, extract_to="/tmp/dataset"):
     """Extract the Grocery Store dataset from tar.gz or zip file."""
     
     # Check if already extracted
-    dataset_dir = os.path.join(extract_to, 'grocery-rfdetr')
+    dataset_dir = os.path.join(extract_to, 'GroceryStoreDataset_COCO')
     if os.path.exists(dataset_dir) and os.path.exists(os.path.join(dataset_dir, 'train')):
         print(f"Dataset already extracted at {dataset_dir}")
         return dataset_dir
     
     print(f"Extracting dataset from {archive_path}...")
+    print(f"File size: {os.path.getsize(archive_path) / (1024*1024):.2f} MB")
     os.makedirs(extract_to, exist_ok=True)
     
-    # Extract based on file type
-    if archive_path.endswith(('.tar.gz', '.tgz')):
-        with tarfile.open(archive_path, 'r:gz') as tar_ref:
-            tar_ref.extractall(path=extract_to)
-    elif archive_path.endswith('.tar'):
-        with tarfile.open(archive_path, 'r:') as tar_ref:
-            tar_ref.extractall(path=extract_to)
-    elif archive_path.endswith('.zip'):
-        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-            zip_ref.extractall(extract_to)
-    else:
-        raise ValueError(f"Unsupported archive format: {archive_path}")
+    try:
+        # Extract based on file type
+        if archive_path.endswith(('.tar.gz', '.tgz')):
+            with tarfile.open(archive_path, 'r:gz') as tar_ref:
+                tar_ref.extractall(path=extract_to)
+        elif archive_path.endswith('.tar'):
+            with tarfile.open(archive_path, 'r:') as tar_ref:
+                tar_ref.extractall(path=extract_to)
+        elif archive_path.endswith('.zip'):
+            # Try using unzip command instead
+            import subprocess
+            result = subprocess.run(['unzip', '-q', archive_path, '-d', extract_to], 
+                                  capture_output=True, text=True)
+            if result.returncode != 0:
+                print(f"unzip error: {result.stderr}")
+                raise Exception(f"Failed to extract zip file")
+        else:
+            raise ValueError(f"Unsupported archive format: {archive_path}")
+    except Exception as e:
+        print(f"Error extracting: {e}")
+        raise
     
     print(f"Dataset extracted to {extract_to}")
+    
+    # Find the actual dataset directory
+    extracted_contents = os.listdir(extract_to)
+    print(f"Extracted contents: {extracted_contents}")
+    
+    # Look for the dataset directory
+    if 'GroceryStoreDataset_COCO' in extracted_contents:
+        dataset_dir = os.path.join(extract_to, 'GroceryStoreDataset_COCO')
+    elif len(extracted_contents) == 1 and os.path.isdir(os.path.join(extract_to, extracted_contents[0])):
+        dataset_dir = os.path.join(extract_to, extracted_contents[0])
+    else:
+        # Maybe files are directly in extract_to
+        dataset_dir = extract_to
+    
     return dataset_dir
 
 
