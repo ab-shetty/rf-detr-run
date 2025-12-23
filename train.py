@@ -1,78 +1,112 @@
 import os
 import zipfile
+import tarfile
 import argparse
-import yaml
-import wandb
+import json
 from pathlib import Path
-from rfdetr import RFDETRSmall
+from rfdetr import RFDETRMedium
+import wandb
 
-def extract_dataset(zip_path, extract_to="/tmp/dataset"):
-  
-    print(f"Extracting dataset from {zip_path}...")
+
+def extract_dataset(archive_path, extract_to="/tmp/dataset"):
+    """Extract the Grocery Store dataset from tar.gz or zip file."""
+    
+    # Check if already extracted
+    dataset_dir = os.path.join(extract_to, 'grocery-rfdetr')
+    if os.path.exists(dataset_dir) and os.path.exists(os.path.join(dataset_dir, 'train')):
+        print(f"Dataset already extracted at {dataset_dir}")
+        return dataset_dir
+    
+    print(f"Extracting dataset from {archive_path}...")
     os.makedirs(extract_to, exist_ok=True)
-    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        zip_ref.extractall(extract_to)
-    print(f"✅ Dataset extracted to {extract_to}")
-    return extract_to
+    
+    # Extract based on file type
+    if archive_path.endswith(('.tar.gz', '.tgz')):
+        with tarfile.open(archive_path, 'r:gz') as tar_ref:
+            tar_ref.extractall(path=extract_to)
+    elif archive_path.endswith('.tar'):
+        with tarfile.open(archive_path, 'r:') as tar_ref:
+            tar_ref.extractall(path=extract_to)
+    elif archive_path.endswith('.zip'):
+        with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_to)
+    else:
+        raise ValueError(f"Unsupported archive format: {archive_path}")
+    
+    print(f"Dataset extracted to {extract_to}")
+    return dataset_dir
 
-def restructure_dataset(extract_dir):
-    """Reorganize dataset to RF-DETR format"""
-    import shutil
-    
-    dataset_dir = os.path.join(extract_dir, 'dataset')
-    
-    # Rename val to valid
-    val_dir = os.path.join(dataset_dir, 'val')
-    if os.path.exists(val_dir):
-        os.rename(val_dir, os.path.join(dataset_dir, 'valid'))
+
+def verify_annotations(dataset_dir):
+    """Verify annotations are RF-DETR compatible."""
+    print("Verifying annotations...")
     
     for split in ['train', 'valid', 'test']:
-        split_dir = os.path.join(dataset_dir, split)
-        images_dir = os.path.join(split_dir, 'images')
+        anno_path = os.path.join(dataset_dir, split, '_annotations.coco.json')
+        if not os.path.exists(anno_path):
+            print(f"{split}: annotations not found")
+            continue
         
-        # Move images from images/ subfolder to split folder
-        if os.path.exists(images_dir):
-            for img in os.listdir(images_dir):
-                shutil.move(os.path.join(images_dir, img), 
-                           os.path.join(split_dir, img))
-            os.rmdir(images_dir)
+        with open(anno_path, 'r') as f:
+            data = json.load(f)
         
-        # Move annotation file
-        anno_src = f'annotations_{split if split != "valid" else "val"}.json'
-        anno_path = os.path.join(dataset_dir, anno_src)
-        if os.path.exists(anno_path):
-            shutil.move(anno_path, 
-                       os.path.join(split_dir, '_annotations.coco.json'))
-    
-    return dataset_dir
-  
+        print(f"{split}: {len(data['images'])} images, {len(data['annotations'])} annotations, {len(data['categories'])} categories")
+
+
 def train_rfdetr(args):
+    """Train RF-DETR model on Grocery Store dataset."""
+
     # Set W&B entity before RF-DETR initializes
     os.environ['WANDB_ENTITY'] = 'ashetty21-university-of-california-berkeley'
     wandb.login(key=os.environ.get('WANDB_API_KEY'))
-
-    model = RFDETRSmall()
-
-    # Dataset
-    zip_files = [f for f in os.listdir(args.dataset_dir) if f.endswith('.zip')]
-    if not zip_files:
-        raise FileNotFoundError(f"No zip file found in {args.dataset_dir}")
-    dataset_zip = os.path.join(args.dataset_dir, zip_files[0])
-    extract_dir = extract_dataset(dataset_zip)
-    dataset_dir = restructure_dataset(extract_dir)
-
-    # Train with wandb logging (RF-DETR will create and manage W&B run)
+    
+    # Initialize model
+    print("Initializing RF-DETR Medium model...")
+    model = RFDETRMedium()
+    
+    # Locate dataset
+    dataset_dir = None
+    possible_dataset_dir = os.path.join(args.dataset_dir, 'GroceryStoreDataset_COCO')
+    
+    if os.path.exists(possible_dataset_dir) and os.path.exists(os.path.join(possible_dataset_dir, 'train')):
+        dataset_dir = possible_dataset_dir
+    elif os.path.exists(os.path.join(args.dataset_dir, 'train')) and os.path.exists(os.path.join(args.dataset_dir, 'valid')):
+        dataset_dir = args.dataset_dir
+    else:
+        # Look for archive to extract
+        archive_files = [f for f in os.listdir(args.dataset_dir) 
+                         if f.endswith(('.zip', '.tar.gz', '.tgz', '.tar'))]
+        if not archive_files:
+            raise FileNotFoundError(f"No dataset found in {args.dataset_dir}")
+        
+        dataset_archive = os.path.join(args.dataset_dir, archive_files[0])
+        print(f"Extracting: {archive_files[0]}")
+        dataset_dir = extract_dataset(dataset_archive)
+    
+    print(f"Dataset: {dataset_dir}")
+    
+    # Verify annotations
+    verify_annotations(dataset_dir)
+    
+    print(f"\nStarting training...")
+    print(f"  - Epochs: {args.epochs}")
+    print(f"  - Batch size: {args.batch}")
+    print(f"  - Grad accum: {args.grad_accum_steps}")
+    print(f"  - Learning rate: {args.lr}")
+    print()
+    
+    # Train
     model.train(
         dataset_dir=dataset_dir,
         epochs=args.epochs,
         batch_size=args.batch,
-        grad_accum_steps=4,
-        lr=1e-4,
+        grad_accum_steps=args.grad_accum_steps,
+        lr=args.lr,
         output_dir=args.out_dir,
         wandb=True,
         project=args.wandb_project,
     )
-    
+
     # Get the run ID that RF-DETR just used
     print("Saving model artifact to W&B...")
     api = wandb.Api()
@@ -88,9 +122,9 @@ def train_rfdetr(args):
     )
     
     artifact = wandb.Artifact(
-        name=f"rfdetr-small-model",
+        name=f"rfdetr-grocery-model",
         type="model",
-        description=f"RF-DETR Small trained for {args.epochs} epochs"
+        description=f"RF-DETR Medium trained on Grocery Store dataset for {args.epochs} epochs"
     )
     
     # Add checkpoint files to artifact
@@ -103,22 +137,33 @@ def train_rfdetr(args):
     
     # Finish the run
     wandb.finish()
-    print("✅ Model artifact saved to W&B")
-  
-  
+    print("Model artifact saved to W&B")
+    print("Training completed!")
+    print(f"Checkpoints: {args.out_dir}")
+
+
 def main():
-    parser = argparse.ArgumentParser(description='Train RF-DETR on Flex AI')
-    parser.add_argument('--dataset_dir', type=str, default='/input')
+    parser = argparse.ArgumentParser(description='Train RF-DETR on Grocery Store Dataset')
+    
+    parser.add_argument('--dataset_dir', type=str, default='/input',
+                        help='Directory containing the dataset')
     parser.add_argument('--out_dir', type=str, 
                         default=os.environ.get('FLEXAI_OUTPUT_CHECKPOINT_DIR', '/output-checkpoints'),
                         help='Output directory for checkpoints')
-    parser.add_argument('--epochs', type=int, default=10)
-    parser.add_argument('--batch', type=int, default=16)
-    parser.add_argument('--wandb_project', type=str, default='rfdetr-training',
+    parser.add_argument('--epochs', type=int, default=10,
+                        help='Number of training epochs')
+    parser.add_argument('--batch', type=int, default=16,
+                        help='Batch size for training')
+    parser.add_argument('--grad_accum_steps', type=int, default=4,
+                        help='Gradient accumulation steps')
+    parser.add_argument('--lr', type=float, default=1e-4,
+                        help='Learning rate')
+    parser.add_argument('--wandb_project', type=str, default='rfdetr-grocery-training',
                         help='W&B project name')
-
+    
     args = parser.parse_args()
     train_rfdetr(args)
+
 
 if __name__ == '__main__':
     main()
